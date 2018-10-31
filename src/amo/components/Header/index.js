@@ -104,7 +104,7 @@ export class HeaderBase extends React.Component {
               <DropdownMenuItem>
                 <Link
                   className="Header-user-menu-view-profile-link"
-                  to={siteUser ? `/user/${siteUser.username}/` : null}
+                  to={siteUser ? `/user/${siteUser.id}/` : null}
                 >
                   {i18n.gettext('View My Profile')}
                 </Link>
