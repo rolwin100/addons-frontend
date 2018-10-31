@@ -21,7 +21,6 @@ import type {
   UpdateUserAccountParams,
   UpdateUserNotificationsParams,
   UserApiParams,
-  UserApiParamsWithUsername,
 } from 'amo/api/users';
 import type {
   DeleteUserAccountAction,
@@ -118,7 +117,7 @@ export function* updateUserAccount({
       yield put(
         loadUserNotifications({
           notifications: allNotifications,
-          username: user.username,
+          userId: user.id,
         }),
       );
     }
@@ -131,7 +130,7 @@ export function* updateUserAccount({
 }
 
 export function* fetchUserAccount({
-  payload: { errorHandlerId, username },
+  payload: { errorHandlerId, userId },
 }: FetchUserAccountAction): Saga {
   const errorHandler = createErrorHandler(errorHandlerId);
 
@@ -140,9 +139,9 @@ export function* fetchUserAccount({
   try {
     const state = yield select(getState);
 
-    const params: UserApiParamsWithUsername = {
+    const params: UserApiParams = {
       api: state.api,
-      username,
+      userId,
     };
 
     const user = yield call(api.userAccount, params);
@@ -155,7 +154,7 @@ export function* fetchUserAccount({
 }
 
 export function* fetchUserNotifications({
-  payload: { errorHandlerId, username },
+  payload: { errorHandlerId, userId },
 }: FetchUserNotificationsAction): Saga {
   const errorHandler = createErrorHandler(errorHandlerId);
 
@@ -164,12 +163,14 @@ export function* fetchUserNotifications({
   try {
     const state = yield select(getState);
 
-    const notifications = yield call(api.userNotifications, {
+    const params: UserApiParams = {
       api: state.api,
-      username,
-    });
+      userId,
+    };
 
-    yield put(loadUserNotifications({ notifications, username }));
+    const notifications = yield call(api.userNotifications, params);
+
+    yield put(loadUserNotifications({ notifications, userId }));
   } catch (error) {
     log.warn(`User notifications failed to load: ${error}`);
     yield put(errorHandler.createErrorAction(error));

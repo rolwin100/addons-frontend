@@ -20,7 +20,6 @@ import {
   fetchUserAccount,
   getCurrentUser,
   getUserById,
-  getUserByUsername,
   hasPermission,
   isDeveloper,
 } from 'amo/reducers/users';
@@ -59,7 +58,7 @@ type Props = {|
   location: ReactRouterLocationType,
   match: {|
     ...ReactRouterMatchType,
-    params: {| username: string |},
+    params: {| userId: string |},
   |},
 |};
 
@@ -100,7 +99,7 @@ export class UserProfileBase extends React.Component<InternalProps> {
       dispatch(
         fetchUserAccount({
           errorHandlerId: errorHandler.id,
-          username: params.username,
+          userId: Number(params.userId),
         }),
       );
     } else if (isOwner && !reviews) {
@@ -129,11 +128,11 @@ export class UserProfileBase extends React.Component<InternalProps> {
       user,
     } = this.props;
 
-    if (oldParams.username !== newParams.username) {
+    if (oldParams.userId !== newParams.userId) {
       dispatch(
         fetchUserAccount({
           errorHandlerId: errorHandler.id,
-          username: newParams.username,
+          userId: Number(newParams.userId),
         }),
       );
     } else if (
@@ -151,17 +150,17 @@ export class UserProfileBase extends React.Component<InternalProps> {
     }
   }
 
-  getUsername() {
+  getUserId() {
     const {
       match: { params },
       user,
     } = this.props;
 
-    return user ? user.username : params.username;
+    return user ? user.id : params.userId;
   }
 
   getURL() {
-    return `/user/${this.getUsername()}/`;
+    return `/user/${this.getUserId()}/`;
   }
 
   getEditURL() {
@@ -311,12 +310,11 @@ export class UserProfileBase extends React.Component<InternalProps> {
       </div>
     );
 
-    const userProfileTitle = i18n.sprintf(
-      i18n.gettext('User Profile for %(user)s'),
-      {
-        user: user ? user.name : params.username,
-      },
-    );
+    const userProfileTitle = user
+      ? i18n.sprintf(i18n.gettext('User Profile for %(user)s'), {
+          user: user.name,
+        })
+      : i18n.gettext('User Profile');
 
     return (
       <div className="UserProfile">
@@ -454,17 +452,12 @@ export class UserProfileBase extends React.Component<InternalProps> {
 }
 
 export function mapStateToProps(state: AppState, ownProps: Props) {
-  const { username } = ownProps.match.params;
+  const { params } = ownProps.match;
 
   const currentUser = getCurrentUser(state.users);
 
-  // `getUserByUsername()` requires a string as second argument.
-  let user = getUserByUsername(state.users, `${username}`);
-
-  if (!user && /^[0-9]+$/.test(username)) {
-    const userId = parseInt(username, 10);
-    user = !Number.isNaN(userId) ? getUserById(state.users, userId) : undefined;
-  }
+  const userId = Number(params.userId);
+  const user = getUserById(state.users, userId) || null;
 
   const isOwner = currentUser && user && currentUser.id === user.id;
 
@@ -487,7 +480,7 @@ export function mapStateToProps(state: AppState, ownProps: Props) {
 }
 
 export const extractId = (ownProps: Props) => {
-  return ownProps.match.params.username;
+  return ownProps.match.params.userId;
 };
 
 const UserProfile: React.ComponentType<Props> = compose(
