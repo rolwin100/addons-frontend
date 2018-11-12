@@ -52,7 +52,7 @@ import {
   fakeTheme,
   fakeVersion,
   getFakeAddonManagerWrapper,
-  getFakeConfig,
+  getFakeLogger,
   shallowUntilTarget,
   userAgentsByPlatform,
 } from 'tests/unit/helpers';
@@ -60,7 +60,6 @@ import {
   WithInstallHelpers,
   findInstallURL,
   installTheme,
-  makeMapDispatchToProps,
   makeProgressHandler,
   withInstallHelpers,
 } from 'core/installAddon';
@@ -92,17 +91,11 @@ const defaultProps = ({
 } = {}) => {
   sinon.stub(store, 'dispatch');
 
-  // This will be removed in:
-  // https://github.com/mozilla/addons-frontend/issues/6878
-  const { userAgentInfo } = store.getState().api;
-
   return {
     _addonManager,
     addon,
-    dispatch: store.dispatch,
     location,
     store,
-    userAgentInfo,
     ...overrides,
   };
 };
@@ -141,21 +134,6 @@ const _loadVersions = ({ store, versionProps = {} }) => {
 };
 
 describe(__filename, () => {
-  it('connects mapDispatchToProps for the component', () => {
-    const _makeMapDispatchToProps = sinon.spy();
-    const WrappedComponent = sinon.stub();
-
-    withInstallHelpers({
-      defaultInstallSource: 'Howdy',
-      _makeMapDispatchToProps,
-    })(WrappedComponent);
-
-    sinon.assert.calledWith(_makeMapDispatchToProps, {
-      WrappedComponent,
-      defaultInstallSource: 'Howdy',
-    });
-  });
-
   it('wraps the component in WithInstallHelpers', () => {
     const Component = componentWithInstallHelpers();
 
@@ -244,8 +222,8 @@ describe(__filename, () => {
 
   it('throws without a defaultInstallSource', () => {
     expect(() => {
-      withInstallHelpers({})(() => {});
-    }).toThrowError(/defaultInstallSource is required/);
+      withInstallHelpers({});
+    }).toThrow(/defaultInstallSource is required/);
   });
 
   it('sets the current status in componentDidMount with an addonManager', () => {
@@ -364,7 +342,12 @@ describe(__filename, () => {
 
   describe('withInstallHelpers', () => {
     const defaultInstallSource = 'some-install-source';
-    const WrappedComponent = sinon.stub();
+
+    it('accepts a `null` add-on', () => {
+      const { root } = renderWithInstallHelpers({ addon: null });
+
+      expect(root).toHaveLength(1);
+    });
 
     describe('isAddonEnabled', () => {
       it('returns true when the add-on is enabled', async () => {
@@ -383,6 +366,7 @@ describe(__filename, () => {
       });
 
       it('returns false when there is an error', async () => {
+        const _log = getFakeLogger();
         const fakeAddonManager = getFakeAddonManagerWrapper({
           // Resolve a null addon which will trigger an exception.
           getAddon: Promise.resolve(null),
@@ -391,12 +375,39 @@ describe(__filename, () => {
         const { root } = renderWithInstallHelpers({
           addon: createInternalAddon(fakeAddon),
           _addonManager: fakeAddonManager,
+          _log,
         });
 
         const { isAddonEnabled } = root.instance().props;
         const isEnabled = await isAddonEnabled();
 
         expect(isEnabled).toEqual(false);
+
+        sinon.assert.calledWith(
+          _log.error,
+          'could not determine whether the add-on was enabled',
+        );
+      });
+
+      it('returns false when there is no add-on', async () => {
+        const _log = getFakeLogger();
+        const fakeAddonManager = getFakeAddonManagerWrapper();
+
+        const { root } = renderWithInstallHelpers({
+          addon: null,
+          _addonManager: fakeAddonManager,
+          _log,
+        });
+
+        const { isAddonEnabled } = root.instance().props;
+        const isEnabled = await isAddonEnabled();
+
+        expect(isEnabled).toEqual(false);
+
+        sinon.assert.calledWith(
+          _log.debug,
+          'no addon, assuming addon is not enabled',
+        );
       });
     });
 
@@ -735,6 +746,18 @@ describe(__filename, () => {
           );
         });
       });
+
+      it('does nothing when addon is `null`', () => {
+        const _log = getFakeLogger();
+
+        const { dispatch } = renderWithInstallHelpers({ _log, addon: null });
+
+        sinon.assert.notCalled(dispatch);
+        sinon.assert.calledWith(
+          _log.debug,
+          'no addon, aborting setCurrentStatus()',
+        );
+      });
     });
 
     describe('makeProgressHandler', () => {
@@ -992,6 +1015,24 @@ describe(__filename, () => {
               error: FATAL_ERROR,
             }),
           );
+        });
+      });
+
+      it('does nothing when enable() is called with a `null` add-on', () => {
+        const _log = getFakeLogger();
+
+        const { root, dispatch } = renderWithInstallHelpers({
+          _log,
+          addon: null,
+        });
+        const { enable } = root.instance().props;
+
+        return enable().then(() => {
+          sinon.assert.calledWith(
+            _log.debug,
+            'no addon found, aborting enable().',
+          );
+          sinon.assert.notCalled(dispatch);
         });
       });
     });
@@ -1278,6 +1319,38 @@ describe(__filename, () => {
           );
         });
       });
+
+      it('does nothing when install() is called with a `null` add-on', () => {
+        const _log = getFakeLogger();
+
+        const { root, dispatch } = renderWithInstallHelpers({
+          _log,
+          addon: null,
+        });
+        const { install } = root.instance().props;
+
+        return install().then(() => {
+          sinon.assert.calledWith(
+            _log.debug,
+            'no addon found, aborting install().',
+          );
+          sinon.assert.notCalled(dispatch);
+        });
+      });
+
+      it('does nothing when install() is called with no currentVersion', () => {
+        const _log = getFakeLogger();
+
+        const { root } = renderWithInstallHelpers({ _log });
+        const { install } = root.instance().props;
+
+        return install().then(() => {
+          sinon.assert.calledWith(
+            _log.debug,
+            'no currentVersion found, aborting install().',
+          );
+        });
+      });
     });
 
     describe('uninstall', () => {
@@ -1416,63 +1489,6 @@ describe(__filename, () => {
             label: addon.name,
           });
         });
-      });
-    });
-
-    describe('mapDispatchToProps', () => {
-      const _config = getFakeConfig({ server: false });
-      let fakeDispatch;
-
-      beforeEach(() => {
-        fakeDispatch = sinon.stub();
-      });
-
-      it('still maps props on the server', () => {
-        const configServer = getFakeConfig({ server: true });
-
-        expect(
-          makeMapDispatchToProps({
-            WrappedComponent,
-            _config: configServer,
-            defaultInstallSource,
-          })(fakeDispatch),
-        ).toEqual({
-          dispatch: fakeDispatch,
-          defaultInstallSource,
-          WrappedComponent,
-        });
-      });
-
-      it('requires addon', () => {
-        const props = defaultProps();
-        delete props.addon;
-
-        expect(() => {
-          makeMapDispatchToProps({ _config })(fakeDispatch, props);
-        }).toThrowError(/addon prop is required/);
-      });
-
-      it('requires userAgentInfo', () => {
-        const props = defaultProps();
-        delete props.userAgentInfo;
-        expect(() => {
-          makeMapDispatchToProps({ _config })(fakeDispatch, props);
-        }).toThrowError(/userAgentInfo prop is required/);
-      });
-
-      it('requires location', () => {
-        const props = defaultProps();
-        delete props.location;
-        expect(() => {
-          makeMapDispatchToProps({ _config })(fakeDispatch, props);
-        }).toThrowError(/location prop is required/);
-      });
-
-      it('can wrap an extension with the right props', () => {
-        const props = defaultProps();
-        expect(() => {
-          makeMapDispatchToProps({ _config })(fakeDispatch, props);
-        }).not.toThrowError();
       });
     });
 
